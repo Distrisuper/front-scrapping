@@ -10,13 +10,15 @@ export default function Filters({ marcas, lineas, filtroMarca, filtroLinea, onMa
         options={marcas}
         onChange={onMarcaChange}
       />
-      <SearchableSelect
-        label="Línea"
-        placeholder="Buscar línea..."
-        value={filtroLinea}
-        options={lineas}
-        onChange={onLineaChange}
-      />
+      {filtroMarca && (
+        <SearchableSelect
+          label="Línea"
+          placeholder="Buscar línea..."
+          value={filtroLinea}
+          options={lineas}
+          onChange={onLineaChange}
+        />
+      )}
     </div>
   );
 }

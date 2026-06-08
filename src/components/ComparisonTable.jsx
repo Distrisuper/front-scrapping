@@ -3,9 +3,26 @@ import ProductDetail from "./ProductDetail.jsx";
 import AddProductForm from "./AddProductForm.jsx";
 import { formatPrecio, calcPorcentaje } from "../utils.js";
 
-export default function ComparisonTable({ productos, filtroMarca, filtroLinea, onAdd, onDelete, onDeleteGrupo, onUpdate }) {
+export default function ComparisonTable({
+  productos,
+  competidores,
+  filtroMarca,
+  filtroLinea,
+  onAdd,
+  onDelete,
+  onDeleteGrupo,
+  onUpdate,
+  onUpdatePrecio,
+  onAddCompetidor,
+  onRenameCompetidor,
+  onDeleteCompetidor,
+}) {
   const [expandedRow, setExpandedRow] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [addingCompetidor, setAddingCompetidor] = useState(false);
+  const [newCompetidorName, setNewCompetidorName] = useState("");
+  const [editingCompetidorId, setEditingCompetidorId] = useState(null);
+  const [editingCompetidorName, setEditingCompetidorName] = useState("");
 
   const filtrados = useMemo(() => {
     return productos.filter((p) => {
@@ -20,24 +37,56 @@ export default function ComparisonTable({ productos, filtroMarca, filtroLinea, o
     filtrados.forEach((p) => {
       const key = `${p.marca}||${p.linea}`;
       if (!map[key]) {
-        map[key] = { marca: p.marca, linea: p.linea, totalDistri: 0, totalProv: 0, productos: [] };
+        map[key] = {
+          marca: p.marca,
+          linea: p.linea,
+          totalDistri: 0,
+          totalesCompetidores: {},
+          productos: [],
+        };
       }
       map[key].totalDistri += p.precioDistri || 0;
-      map[key].totalProv += p.precioProveedor || 0;
+      competidores.forEach((c) => {
+        const precio = (p.precios && p.precios[c.id]) || 0;
+        map[key].totalesCompetidores[c.id] = (map[key].totalesCompetidores[c.id] || 0) + precio;
+      });
       map[key].productos.push(p);
     });
-    return Object.values(map).sort((a, b) => a.marca.localeCompare(b.marca) || a.linea.localeCompare(b.linea));
-  }, [filtrados]);
+    return Object.values(map).sort(
+      (a, b) => a.marca.localeCompare(b.marca) || a.linea.localeCompare(b.linea)
+    );
+  }, [filtrados, competidores]);
 
   const totales = useMemo(() => {
-    return agrupados.reduce(
-      (acc, g) => ({ totalDistri: acc.totalDistri + g.totalDistri, totalProv: acc.totalProv + g.totalProv }),
-      { totalDistri: 0, totalProv: 0 }
-    );
-  }, [agrupados]);
+    const totalDistri = agrupados.reduce((s, g) => s + g.totalDistri, 0);
+    const totalesCompetidores = {};
+    competidores.forEach((c) => {
+      totalesCompetidores[c.id] = agrupados.reduce((s, g) => s + (g.totalesCompetidores[c.id] || 0), 0);
+    });
+    return { totalDistri, totalesCompetidores };
+  }, [agrupados, competidores]);
 
   const toggleRow = (key) => {
     setExpandedRow(expandedRow === key ? null : key);
+  };
+
+  // Columnas: Marca/Línea + Distrisuper + (Precio + Variación) x competidores + botón "+ Competidor" + acciones
+  const totalCols = 2 + competidores.length * 2 + 1 + 1;
+
+  const handleAddCompetidor = () => {
+    if (newCompetidorName.trim()) {
+      onAddCompetidor(newCompetidorName);
+      setNewCompetidorName("");
+      setAddingCompetidor(false);
+    }
+  };
+
+  const handleRenameCompetidor = () => {
+    if (editingCompetidorName.trim()) {
+      onRenameCompetidor(editingCompetidorId, editingCompetidorName);
+      setEditingCompetidorId(null);
+      setEditingCompetidorName("");
+    }
   };
 
   return (
@@ -64,17 +113,85 @@ export default function ComparisonTable({ productos, filtroMarca, filtroLinea, o
             <thead>
               <tr className="bg-gray-50 text-gray-500 text-sm uppercase tracking-wider">
                 <th className="text-left py-3 px-4 font-semibold">Marca</th>
-                <th className="text-left py-3 px-4 font-semibold">Línea</th>
-                <th className="text-right py-3 px-4 font-semibold">Diferencia</th>
                 <th className="text-right py-3 px-4 font-semibold">Distrisuper</th>
-                <th className="text-right py-3 px-4 font-semibold">Competencia</th>
+                {competidores.map((c) => (
+                  <Fragment key={c.id}>
+                    <th className="text-right py-3 px-4 font-semibold normal-case tracking-normal">
+                      {editingCompetidorId === c.id ? (
+                        <input
+                          type="text"
+                          value={editingCompetidorName}
+                          autoFocus
+                          onChange={(e) => setEditingCompetidorName(e.target.value)}
+                          onBlur={handleRenameCompetidor}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleRenameCompetidor();
+                            else if (e.key === "Escape") { setEditingCompetidorId(null); setEditingCompetidorName(""); }
+                          }}
+                          className="bg-white border border-blue-300 rounded px-2 py-1 text-gray-700 text-sm font-semibold w-32 focus:outline-none focus:ring-1 focus:ring-blue-200"
+                        />
+                      ) : (
+                        <span className="inline-flex items-center gap-1 group/header">
+                          <span className="uppercase tracking-wider">{c.nombre}</span>
+                          <span className="opacity-0 group-hover/header:opacity-100 transition-opacity inline-flex gap-1">
+                            <button
+                              onClick={() => { setEditingCompetidorId(c.id); setEditingCompetidorName(c.nombre); }}
+                              className="text-gray-300 hover:text-blue-400 text-xs"
+                              title="Renombrar"
+                            >
+                              ✎
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm(`¿Eliminar competidor "${c.nombre}"? Se borrarán todos sus precios.`)) {
+                                  onDeleteCompetidor(c.id);
+                                }
+                              }}
+                              className="text-gray-300 hover:text-rose-400 text-xs"
+                              title="Eliminar competidor"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        </span>
+                      )}
+                    </th>
+                    <th className="text-right py-3 px-4 font-semibold">Variación</th>
+                  </Fragment>
+                ))}
+                <th className="text-center py-3 px-2 font-semibold normal-case">
+                  {addingCompetidor ? (
+                    <div className="inline-flex items-center gap-1">
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="Nombre"
+                        value={newCompetidorName}
+                        onChange={(e) => setNewCompetidorName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleAddCompetidor();
+                          else if (e.key === "Escape") { setAddingCompetidor(false); setNewCompetidorName(""); }
+                        }}
+                        onBlur={handleAddCompetidor}
+                        className="bg-white border border-blue-300 rounded px-2 py-1 text-gray-700 text-sm font-normal w-32 focus:outline-none focus:ring-1 focus:ring-blue-200"
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setAddingCompetidor(true)}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-medium transition-colors"
+                      title="Agregar competidor"
+                    >
+                      + Competidor
+                    </button>
+                  )}
+                </th>
                 <th className="w-10"></th>
               </tr>
             </thead>
             <tbody>
               {agrupados.map((grupo) => {
                 const key = `${grupo.marca}||${grupo.linea}`;
-                const pct = calcPorcentaje(grupo.totalDistri, grupo.totalProv);
                 const isExpanded = expandedRow === key;
 
                 return (
@@ -89,30 +206,43 @@ export default function ComparisonTable({ productos, filtroMarca, filtroLinea, o
                           <span className={`text-gray-300 transition-transform duration-200 text-xs ${isExpanded ? "rotate-90" : ""}`}>
                             ▶
                           </span>
-                          <span className="font-semibold text-gray-800">{grupo.marca}</span>
+                          <div className="flex flex-col leading-tight">
+                            <span className="font-semibold text-gray-800">{grupo.marca}</span>
+                            <span className="text-sm text-gray-500">{grupo.linea}</span>
+                            <span className="text-xs text-gray-300 mt-0.5">{grupo.productos.length} items</span>
+                          </div>
                         </div>
-                      </td>
-                      <td className="py-3 px-4 text-gray-600" onClick={() => toggleRow(key)}>
-                        {grupo.linea}
-                        <span className="ml-2 text-xs text-gray-300">({grupo.productos.length} items)</span>
-                      </td>
-                      <td className="py-3 px-4 text-right" onClick={() => toggleRow(key)}>
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-bold ${
-                            pct > 0
-                              ? "bg-emerald-100 text-emerald-600"
-                              : "bg-rose-100 text-rose-600"
-                          }`}
-                        >
-                          {pct > 0 ? "▼" : "▲"} {Math.abs(pct).toFixed(1)}%
-                        </span>
                       </td>
                       <td className="py-3 px-4 text-right font-medium text-gray-700" onClick={() => toggleRow(key)}>
                         {formatPrecio(grupo.totalDistri)}
                       </td>
-                      <td className="py-3 px-4 text-right font-medium text-gray-700" onClick={() => toggleRow(key)}>
-                        {formatPrecio(grupo.totalProv)}
-                      </td>
+                      {competidores.map((c) => {
+                        const totalComp = grupo.totalesCompetidores[c.id] || 0;
+                        const pct = calcPorcentaje(grupo.totalDistri, totalComp);
+                        return (
+                          <Fragment key={c.id}>
+                            <td className="py-3 px-4 text-right font-medium text-gray-700" onClick={() => toggleRow(key)}>
+                              {totalComp > 0 ? formatPrecio(totalComp) : <span className="text-gray-300">—</span>}
+                            </td>
+                            <td className="py-3 px-4 text-right" onClick={() => toggleRow(key)}>
+                              {totalComp > 0 ? (
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-bold ${
+                                    pct > 0
+                                      ? "bg-rose-100 text-rose-600"
+                                      : "bg-emerald-100 text-emerald-600"
+                                  }`}
+                                >
+                                  {pct > 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
+                                </span>
+                              ) : (
+                                <span className="text-gray-300">—</span>
+                              )}
+                            </td>
+                          </Fragment>
+                        );
+                      })}
+                      <td onClick={() => toggleRow(key)}></td>
                       <td className="py-3 px-2 text-center">
                         <button
                           onClick={(e) => { e.stopPropagation(); onDeleteGrupo(grupo.marca, grupo.linea); }}
@@ -126,11 +256,14 @@ export default function ComparisonTable({ productos, filtroMarca, filtroLinea, o
                     {isExpanded && (
                       <ProductDetail
                         productos={grupo.productos}
+                        competidores={competidores}
                         marca={grupo.marca}
                         linea={grupo.linea}
+                        colSpan={totalCols}
                         onAdd={onAdd}
                         onDelete={onDelete}
                         onUpdate={onUpdate}
+                        onUpdatePrecio={onUpdatePrecio}
                       />
                     )}
                   </Fragment>
@@ -139,23 +272,31 @@ export default function ComparisonTable({ productos, filtroMarca, filtroLinea, o
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-gray-200 bg-gray-50">
-                <td className="py-3 px-4 font-bold text-gray-800" colSpan={2}>TOTAL</td>
-                <td className="py-3 px-4 text-right">
-                  {totales.totalDistri > 0 && (
-                    <span
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-bold ${
-                        calcPorcentaje(totales.totalDistri, totales.totalProv) > 0
-                          ? "bg-emerald-100 text-emerald-600"
-                          : "bg-rose-100 text-rose-600"
-                      }`}
-                    >
-                      {calcPorcentaje(totales.totalDistri, totales.totalProv) > 0 ? "▼" : "▲"}{" "}
-                      {Math.abs(calcPorcentaje(totales.totalDistri, totales.totalProv)).toFixed(1)}%
-                    </span>
-                  )}
-                </td>
+                <td className="py-3 px-4 font-bold text-gray-800">TOTAL</td>
                 <td className="py-3 px-4 text-right font-bold text-gray-800">{formatPrecio(totales.totalDistri)}</td>
-                <td className="py-3 px-4 text-right font-bold text-gray-800">{formatPrecio(totales.totalProv)}</td>
+                {competidores.map((c) => {
+                  const totalComp = totales.totalesCompetidores[c.id] || 0;
+                  const pct = calcPorcentaje(totales.totalDistri, totalComp);
+                  return (
+                    <Fragment key={c.id}>
+                      <td className="py-3 px-4 text-right font-bold text-gray-800">{formatPrecio(totalComp)}</td>
+                      <td className="py-3 px-4 text-right">
+                        {totales.totalDistri > 0 && totalComp > 0 && (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-bold ${
+                              pct > 0
+                                ? "bg-rose-100 text-rose-600"
+                                : "bg-emerald-100 text-emerald-600"
+                            }`}
+                          >
+                            {pct > 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
+                          </span>
+                        )}
+                      </td>
+                    </Fragment>
+                  );
+                })}
+                <td></td>
                 <td></td>
               </tr>
             </tfoot>

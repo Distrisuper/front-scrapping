@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const emptyForm = { codigo: "", descripcion: "", marca: "", linea: "", precioDistri: "", precioProveedor: "" };
+const emptyForm = { codigo: "", descripcion: "", marca: "", linea: "", precioDistri: "" };
 
 export default function AddProductForm({ onAdd, onCancel, defaults }) {
   const [form, setForm] = useState({ ...emptyForm, ...defaults });
@@ -16,8 +16,7 @@ export default function AddProductForm({ onAdd, onCancel, defaults }) {
       marca: form.marca.trim(),
       linea: form.linea.trim(),
       precioDistri: parseFloat(form.precioDistri) || 0,
-      precioProveedor: parseFloat(form.precioProveedor) || 0,
-      proveedor: "competencia",
+      precios: {},
     });
     setForm({ ...emptyForm, marca: form.marca, linea: form.linea });
   };
@@ -60,7 +59,7 @@ export default function AddProductForm({ onAdd, onCancel, defaults }) {
           />
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs text-gray-500 mb-1">Descripción</label>
           <input
@@ -81,18 +80,10 @@ export default function AddProductForm({ onAdd, onCancel, defaults }) {
             onChange={(e) => set("precioDistri", e.target.value)}
           />
         </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Precio Competencia</label>
-          <input
-            type="number"
-            step="0.01"
-            className={inputClass}
-            placeholder="0.00"
-            value={form.precioProveedor}
-            onChange={(e) => set("precioProveedor", e.target.value)}
-          />
-        </div>
       </div>
+      <p className="text-xs text-gray-400 italic">
+        Los precios de competidores se cargan desde la tabla (click en la celda correspondiente).
+      </p>
       <div className="flex gap-2 justify-end pt-1">
         <button
           type="button"

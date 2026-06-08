@@ -1,74 +1,92 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import AddProductForm from "./AddProductForm.jsx";
-import { formatPrecio, calcPorcentaje } from "../utils.js";
+import EditableCell from "./EditableCell.jsx";
+import { calcPorcentaje } from "../utils.js";
 
-export default function ProductDetail({ productos, marca, linea, onAdd, onDelete, onUpdate }) {
+export default function ProductDetail({
+  productos,
+  competidores,
+  marca,
+  linea,
+  colSpan = 6,
+  onAdd,
+  onDelete,
+  onUpdate,
+  onUpdatePrecio,
+}) {
   const [showAddForm, setShowAddForm] = useState(false);
-  const [editingId, setEditingId] = useState(null);
 
   return (
     <tr>
-      <td colSpan={6} className="p-0">
+      <td colSpan={colSpan} className="p-0">
         <div className="bg-slate-50 border-t border-gray-200">
           <table className="w-full">
             <thead>
               <tr className="text-xs text-gray-400 uppercase">
-                <th className="text-left py-2 px-4 pl-12">Código</th>
-                <th className="text-left py-2 px-4">Descripción</th>
-                <th className="text-right py-2 px-4">Diferencia</th>
+                <th className="text-left py-2 px-4 pl-12">Producto</th>
                 <th className="text-right py-2 px-4">Distrisuper</th>
-                <th className="text-right py-2 px-4">Competencia</th>
+                {competidores.map((c) => (
+                  <Fragment key={c.id}>
+                    <th className="text-right py-2 px-4">{c.nombre}</th>
+                    <th className="text-right py-2 px-4">Variación</th>
+                  </Fragment>
+                ))}
+                <th className="w-10"></th>
                 <th className="w-10"></th>
               </tr>
             </thead>
             <tbody>
-              {productos.map((p) => {
-                const pct = calcPorcentaje(p.precioDistri, p.precioProveedor);
-                const isEditing = editingId === p.id;
-
-                if (isEditing) {
-                  return (
-                    <EditRow
-                      key={p.id}
-                      producto={p}
-                      onSave={(updates) => { onUpdate(p.id, updates); setEditingId(null); }}
-                      onCancel={() => setEditingId(null)}
+              {productos.map((p) => (
+                <tr key={p.id} className="border-t border-gray-100 hover:bg-blue-50/40 text-sm group">
+                  <td className="py-2 px-4 pl-12">
+                    <div className="flex flex-col">
+                      <span className="text-gray-700">{p.descripcion || "—"}</span>
+                      {p.codigo && (
+                        <span className="text-xs text-gray-400 font-mono">{p.codigo}</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-1 px-2">
+                    <EditableCell
+                      value={p.precioDistri}
+                      onSave={(v) => onUpdate(p.id, { precioDistri: v })}
                     />
-                  );
-                }
-
-                return (
-                  <tr key={p.id} className="border-t border-gray-100 hover:bg-blue-50/40 text-sm group">
-                    <td className="py-2 px-4 pl-12 font-mono text-gray-500">{p.codigo || "—"}</td>
-                    <td className="py-2 px-4 text-gray-600">{p.descripcion || "—"}</td>
-                    <td className="py-2 px-4 text-right">
-                      <span className={`inline-flex items-center gap-1 text-sm font-medium ${pct > 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                        {pct > 0 ? "▼" : "▲"} {Math.abs(pct).toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="py-2 px-4 text-right text-gray-600">{formatPrecio(p.precioDistri)}</td>
-                    <td className="py-2 px-4 text-right text-gray-600">{formatPrecio(p.precioProveedor)}</td>
-                    <td className="py-2 px-2 text-center">
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => setEditingId(p.id)}
-                          className="text-gray-300 hover:text-blue-400 transition-colors text-xs"
-                          title="Editar"
-                        >
-                          ✎
-                        </button>
-                        <button
-                          onClick={() => onDelete(p.id)}
-                          className="text-gray-300 hover:text-rose-400 transition-colors text-xs"
-                          title="Eliminar"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                  </td>
+                  {competidores.map((c) => {
+                    const precio = (p.precios && p.precios[c.id]) || 0;
+                    const pct = calcPorcentaje(p.precioDistri, precio);
+                    return (
+                      <Fragment key={c.id}>
+                        <td className="py-1 px-2">
+                          <EditableCell
+                            value={precio}
+                            onSave={(v) => onUpdatePrecio(p.id, c.id, v)}
+                          />
+                        </td>
+                        <td className="py-2 px-4 text-right">
+                          {precio > 0 ? (
+                            <span className={`inline-flex items-center gap-1 text-sm font-medium ${pct > 0 ? "text-rose-500" : "text-emerald-500"}`}>
+                              {pct > 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 text-sm">—</span>
+                          )}
+                        </td>
+                      </Fragment>
+                    );
+                  })}
+                  <td></td>
+                  <td className="py-2 px-2 text-center">
+                    <button
+                      onClick={() => onDelete(p.id)}
+                      className="text-gray-300 hover:text-rose-400 transition-colors text-xs opacity-0 group-hover:opacity-100"
+                      title="Eliminar"
+                    >
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
 
@@ -88,53 +106,6 @@ export default function ProductDetail({ productos, marca, linea, onAdd, onDelete
               </button>
             )}
           </div>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-function EditRow({ producto, onSave, onCancel }) {
-  const [form, setForm] = useState({
-    codigo: producto.codigo || "",
-    descripcion: producto.descripcion || "",
-    precioDistri: producto.precioDistri || "",
-    precioProveedor: producto.precioProveedor || "",
-  });
-
-  const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
-
-  const inputClass =
-    "bg-white border border-gray-200 rounded px-2 py-1 text-gray-700 text-sm focus:outline-none focus:ring-1 focus:ring-blue-200 w-full";
-
-  return (
-    <tr className="border-t border-gray-100 bg-blue-50/30 text-sm">
-      <td className="py-2 px-4 pl-12">
-        <input className={inputClass} value={form.codigo} onChange={(e) => set("codigo", e.target.value)} />
-      </td>
-      <td className="py-2 px-4">
-        <input className={inputClass} value={form.descripcion} onChange={(e) => set("descripcion", e.target.value)} />
-      </td>
-      <td className="py-2 px-4">
-        <input type="number" step="0.01" className={inputClass} value={form.precioDistri} onChange={(e) => set("precioDistri", e.target.value)} />
-      </td>
-      <td className="py-2 px-4">
-        <input type="number" step="0.01" className={inputClass} value={form.precioProveedor} onChange={(e) => set("precioProveedor", e.target.value)} />
-      </td>
-      <td className="py-2 px-4 text-right" colSpan={2}>
-        <div className="flex gap-1 justify-end">
-          <button
-            onClick={() => onSave({ codigo: form.codigo, descripcion: form.descripcion, precioDistri: parseFloat(form.precioDistri) || 0, precioProveedor: parseFloat(form.precioProveedor) || 0 })}
-            className="px-2 py-1 bg-emerald-200 hover:bg-emerald-300 text-emerald-700 text-xs rounded transition-colors"
-          >
-            ✓
-          </button>
-          <button
-            onClick={onCancel}
-            className="px-2 py-1 text-gray-400 hover:text-gray-600 text-xs transition-colors"
-          >
-            ✕
-          </button>
         </div>
       </td>
     </tr>

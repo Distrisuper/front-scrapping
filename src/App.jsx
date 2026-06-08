@@ -1,13 +1,37 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import useLocalStorage from "./hooks/useLocalStorage.js";
 import ComparisonTable from "./components/ComparisonTable.jsx";
 import Filters from "./components/Filters.jsx";
-import { formatPrecio, calcPorcentaje } from "./utils.js";
 
 export default function App() {
   const [productos, setProductos] = useLocalStorage("comparador-productos", []);
+  const [competidores, setCompetidores] = useLocalStorage("comparador-competidores", []);
   const [filtroMarca, setFiltroMarca] = useState("");
   const [filtroLinea, setFiltroLinea] = useState("");
+
+  // Migración automática: si existen productos con precioProveedor (modelo viejo) y no hay
+  // competidores configurados, creamos "Competidor 1" y movemos los precios al nuevo modelo.
+  useEffect(() => {
+    const needsMigration = productos.some(
+      (p) => p.precioProveedor !== undefined && (!p.precios || Object.keys(p.precios).length === 0)
+    );
+    if (!needsMigration) return;
+
+    const competidorId = competidores[0]?.id || "comp1";
+    if (competidores.length === 0) {
+      setCompetidores([{ id: competidorId, nombre: "Competidor 1" }]);
+    }
+    setProductos((prev) =>
+      prev.map((p) => {
+        if (p.precioProveedor === undefined) return p;
+        const { precioProveedor, proveedor, ...rest } = p;
+        return {
+          ...rest,
+          precios: { ...(p.precios || {}), [competidorId]: precioProveedor || 0 },
+        };
+      })
+    );
+  }, [productos, competidores, setProductos, setCompetidores]);
 
   const marcas = useMemo(() => [...new Set(productos.map((p) => p.marca))].sort(), [productos]);
 
@@ -22,7 +46,10 @@ export default function App() {
   };
 
   const addProducto = useCallback((producto) => {
-    setProductos((prev) => [...prev, { ...producto, id: crypto.randomUUID() }]);
+    setProductos((prev) => [
+      ...prev,
+      { ...producto, precios: producto.precios || {}, id: crypto.randomUUID() },
+    ]);
   }, [setProductos]);
 
   const deleteProducto = useCallback((id) => {
@@ -37,10 +64,35 @@ export default function App() {
     setProductos((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
   }, [setProductos]);
 
+  const updatePrecioCompetidor = useCallback((id, competidorId, precio) => {
+    setProductos((prev) =>
+      prev.map((p) =>
+        p.id === id ? { ...p, precios: { ...(p.precios || {}), [competidorId]: precio } } : p
+      )
+    );
+  }, [setProductos]);
+
+  const addCompetidor = useCallback((nombre) => {
+    const id = `comp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    setCompetidores((prev) => [...prev, { id, nombre: nombre.trim() }]);
+  }, [setCompetidores]);
+
+  const renameCompetidor = useCallback((id, nombre) => {
+    setCompetidores((prev) => prev.map((c) => (c.id === id ? { ...c, nombre: nombre.trim() } : c)));
+  }, [setCompetidores]);
+
+  const deleteCompetidor = useCallback((id) => {
+    setCompetidores((prev) => prev.filter((c) => c.id !== id));
+    setProductos((prev) =>
+      prev.map((p) => {
+        if (!p.precios || p.precios[id] === undefined) return p;
+        const { [id]: _removed, ...resto } = p.precios;
+        return { ...p, precios: resto };
+      })
+    );
+  }, [setCompetidores, setProductos]);
+
   const totalProductos = productos.length;
-  const totalDistri = productos.reduce((s, p) => s + (p.precioDistri || 0), 0);
-  const totalProv = productos.reduce((s, p) => s + (p.precioProveedor || 0), 0);
-  const ahorroGlobal = totalDistri > 0 ? calcPorcentaje(totalDistri, totalProv) : 0;
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800">
@@ -49,7 +101,7 @@ export default function App() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-gray-900">Comparador de Precios</h1>
-              <p className="text-sm text-gray-400 mt-0.5">Distrisuper vs Proveedores</p>
+              <p className="text-sm text-gray-400 mt-0.5">Distrisuper vs Competidores</p>
             </div>
             <div className="text-right text-sm text-gray-400">
               <span className="text-gray-700 font-medium">{totalProductos}</span> productos cargados
@@ -60,35 +112,14 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         {totalProductos > 0 ? (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-5">
-                <p className="text-sm text-blue-400 mb-1">Total Distrisuper</p>
-                <p className="text-2xl font-bold text-gray-800">{formatPrecio(totalDistri)}</p>
-              </div>
-              <div className="bg-violet-50 border border-violet-100 rounded-xl p-5">
-                <p className="text-sm text-violet-400 mb-1">Total Competencia</p>
-                <p className="text-2xl font-bold text-gray-800">{formatPrecio(totalProv)}</p>
-              </div>
-              <div className={`rounded-xl p-5 border ${ahorroGlobal > 0 ? "bg-rose-50 border-rose-100" : "bg-emerald-50 border-emerald-100"}`}>
-                <p className={`text-2xl font-bold mb-1 ${ahorroGlobal > 0 ? "text-rose-600" : "text-emerald-600"}`}>
-                  {ahorroGlobal > 0 ? "▲" : "▼"} {Math.abs(ahorroGlobal).toFixed(1)}%
-                </p>
-                <p className="text-sm font-medium text-gray-500">
-                  Distrisuper está más {ahorroGlobal > 0 ? "caro" : "barato"} en relación con Competencia
-                </p>
-              </div>
-            </div>
-
-            <Filters
-              marcas={marcas}
-              lineas={lineas}
-              filtroMarca={filtroMarca}
-              filtroLinea={filtroLinea}
-              onMarcaChange={handleMarcaChange}
-              onLineaChange={setFiltroLinea}
-            />
-          </>
+          <Filters
+            marcas={marcas}
+            lineas={lineas}
+            filtroMarca={filtroMarca}
+            filtroLinea={filtroLinea}
+            onMarcaChange={handleMarcaChange}
+            onLineaChange={setFiltroLinea}
+          />
         ) : (
           <div className="text-center py-16 text-gray-400">
             <p className="text-lg mb-2">No hay productos cargados</p>
@@ -98,12 +129,17 @@ export default function App() {
 
         <ComparisonTable
           productos={productos}
+          competidores={competidores}
           filtroMarca={filtroMarca}
           filtroLinea={filtroLinea}
           onAdd={addProducto}
           onDelete={deleteProducto}
           onDeleteGrupo={deleteGrupo}
           onUpdate={updateProducto}
+          onUpdatePrecio={updatePrecioCompetidor}
+          onAddCompetidor={addCompetidor}
+          onRenameCompetidor={renameCompetidor}
+          onDeleteCompetidor={deleteCompetidor}
         />
       </main>
     </div>
