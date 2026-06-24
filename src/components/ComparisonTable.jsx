@@ -97,12 +97,12 @@ export default function ComparisonTable({
             <tr className="text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
               <th className="text-left py-3 px-3 font-semibold">Descripción</th>
               {mainComp && (
-                <th className="w-32 text-right py-3 px-4 font-semibold">
+                <th className="w-32 text-center py-3 px-4 font-semibold">
                   {mainComp.nombre}
                 </th>
               )}
               {otherComps.map((c) => (
-                <th key={c.id} className="w-36 text-right py-3 px-4 font-semibold">
+                <th key={c.id} className="w-36 text-center py-3 px-4 font-semibold">
                   {c.nombre}
                 </th>
               ))}
@@ -240,10 +240,10 @@ export default function ComparisonTable({
 
                                   {/* precio main — sin resaltado, sin variación */}
                                   {mainComp && (
-                                    <td className="py-2.5 px-4 text-right align-middle">
+                                    <td className="py-2.5 px-4 text-center align-middle">
                                       {mainEntry ? (
-                                        <div className="flex flex-col items-end gap-0.5">
-                                          <span className="font-semibold text-gray-800">
+                                        <div className="flex flex-col items-center gap-0.5">
+                                          <span className="font-semibold text-gray-800 tabular-nums">
                                             {formatPrecio(mainEntry.precio)}
                                           </span>
                                           {mainEntry.codigoOriginal && (
@@ -263,7 +263,7 @@ export default function ComparisonTable({
                                     const entry = getPrecioEntry(p, c.id);
                                     if (!entry) {
                                       return (
-                                        <td key={c.id} className="py-2.5 px-4 text-right align-middle">
+                                        <td key={c.id} className="py-2.5 px-4 text-center align-middle">
                                           <span className="text-gray-300">—</span>
                                         </td>
                                       );
@@ -271,8 +271,8 @@ export default function ComparisonTable({
                                     const pct = calcVariacion(mainPrice, entry.precio);
                                     const tier = getVariacionTier(pct);
                                     return (
-                                      <td key={c.id} className="py-2.5 px-4 text-right align-middle">
-                                        <div className="flex flex-col items-end gap-0.5">
+                                      <td key={c.id} className="py-2.5 px-4 text-center align-middle">
+                                        <div className="flex flex-col items-center gap-0.5">
                                           {pct !== null ? (
                                             <span
                                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${TIER_STYLES[tier]}`}
@@ -284,7 +284,7 @@ export default function ComparisonTable({
                                               sin ref.
                                             </span>
                                           )}
-                                          <span className="text-xs text-gray-500">
+                                          <span className="text-xs text-gray-500 tabular-nums">
                                             {formatPrecio(entry.precio)}
                                           </span>
                                           {entry.codigoOriginal && (
