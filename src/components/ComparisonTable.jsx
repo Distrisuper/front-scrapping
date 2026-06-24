@@ -1,306 +1,337 @@
 import { useState, useMemo, Fragment } from "react";
-import ProductDetail from "./ProductDetail.jsx";
-import AddProductForm from "./AddProductForm.jsx";
-import { formatPrecio, calcPorcentaje } from "../utils.js";
+import { formatPrecio } from "../utils.js";
+import { calcVariacion, getVariacionTier, TIER_STYLES } from "../lib/variacion.js";
+
+const DESC_LIMIT = 80;
+
+function getPrecioEntry(producto, competidorKey) {
+  return (
+    (producto.precios || []).find(
+      (p) => String(p.competidorId) === String(competidorKey) && p.precio > 0
+    ) ?? null
+  );
+}
+
+function avgVariacion(productos, mainId, competidorId) {
+  const vals = productos
+    .map((p) => {
+      const mainPrice = getPrecioEntry(p, mainId)?.precio ?? 0;
+      const compPrice = getPrecioEntry(p, competidorId)?.precio ?? 0;
+      return calcVariacion(mainPrice, compPrice);
+    })
+    .filter((v) => v !== null);
+  return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+}
+
+function VariacionBadge({ pct }) {
+  if (pct === null) return <span className="text-gray-300 text-sm">—</span>;
+  const tier = getVariacionTier(pct);
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${TIER_STYLES[tier]}`}
+    >
+      {pct > 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
+    </span>
+  );
+}
 
 export default function ComparisonTable({
-  productos,
+  data,
   competidores,
-  filtroMarca,
-  filtroLinea,
-  onAdd,
-  onDelete,
-  onDeleteGrupo,
-  onUpdate,
-  onUpdatePrecio,
-  onAddCompetidor,
-  onRenameCompetidor,
-  onDeleteCompetidor,
+  pagination,
+  page,
+  onPageChange,
+  loading,
 }) {
-  const [expandedRow, setExpandedRow] = useState(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [addingCompetidor, setAddingCompetidor] = useState(false);
-  const [newCompetidorName, setNewCompetidorName] = useState("");
-  const [editingCompetidorId, setEditingCompetidorId] = useState(null);
-  const [editingCompetidorName, setEditingCompetidorName] = useState("");
+  const [expandedMarcas, setExpandedMarcas] = useState(new Set());
+  const [expandedLineas, setExpandedLineas] = useState(new Set());
+  const [expandedDescs, setExpandedDescs] = useState(new Set());
 
-  const filtrados = useMemo(() => {
-    return productos.filter((p) => {
-      if (filtroMarca && p.marca !== filtroMarca) return false;
-      if (filtroLinea && p.linea !== filtroLinea) return false;
-      return true;
-    });
-  }, [productos, filtroMarca, filtroLinea]);
+  const mainComp = useMemo(() => competidores.find((c) => c.main) ?? null, [competidores]);
+  const otherComps = useMemo(() => competidores.filter((c) => !c.main), [competidores]);
 
-  const agrupados = useMemo(() => {
-    const map = {};
-    filtrados.forEach((p) => {
-      const key = `${p.marca}||${p.linea}`;
-      if (!map[key]) {
-        map[key] = {
-          marca: p.marca,
-          linea: p.linea,
-          totalDistri: 0,
-          totalesCompetidores: {},
-          productos: [],
-        };
-      }
-      map[key].totalDistri += p.precioDistri || 0;
-      competidores.forEach((c) => {
-        const precio = (p.precios && p.precios[c.id]) || 0;
-        map[key].totalesCompetidores[c.id] = (map[key].totalesCompetidores[c.id] || 0) + precio;
-      });
-      map[key].productos.push(p);
+  const toggleMarca = (key) =>
+    setExpandedMarcas((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
     });
-    return Object.values(map).sort(
-      (a, b) => a.marca.localeCompare(b.marca) || a.linea.localeCompare(b.linea)
+
+  const toggleLinea = (key) =>
+    setExpandedLineas((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
+  const toggleDesc = (key) =>
+    setExpandedDescs((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
+  const { pages } = pagination ?? {};
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-16 text-gray-400 text-sm">
+        Cargando...
+      </div>
     );
-  }, [filtrados, competidores]);
+  }
 
-  const totales = useMemo(() => {
-    const totalDistri = agrupados.reduce((s, g) => s + g.totalDistri, 0);
-    const totalesCompetidores = {};
-    competidores.forEach((c) => {
-      totalesCompetidores[c.id] = agrupados.reduce((s, g) => s + (g.totalesCompetidores[c.id] || 0), 0);
-    });
-    return { totalDistri, totalesCompetidores };
-  }, [agrupados, competidores]);
-
-  const toggleRow = (key) => {
-    setExpandedRow(expandedRow === key ? null : key);
-  };
-
-  // Columnas: Marca/Línea + Distrisuper + (Precio + Variación) x competidores + botón "+ Competidor" + acciones
-  const totalCols = 2 + competidores.length * 2 + 1 + 1;
-
-  const handleAddCompetidor = () => {
-    if (newCompetidorName.trim()) {
-      onAddCompetidor(newCompetidorName);
-      setNewCompetidorName("");
-      setAddingCompetidor(false);
-    }
-  };
-
-  const handleRenameCompetidor = () => {
-    if (editingCompetidorName.trim()) {
-      onRenameCompetidor(editingCompetidorId, editingCompetidorName);
-      setEditingCompetidorId(null);
-      setEditingCompetidorName("");
-    }
-  };
+  if (!data.length) {
+    return (
+      <div className="text-center py-16 text-gray-400">
+        <p className="text-lg">No hay productos</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-200 hover:bg-blue-300 text-blue-700 text-sm font-medium rounded-lg transition-colors"
-        >
-          <span className="text-lg leading-none">+</span> Agregar producto
-        </button>
-      </div>
-
-      {showAddForm && (
-        <AddProductForm
-          onAdd={(p) => { onAdd(p); setShowAddForm(false); }}
-          onCancel={() => setShowAddForm(false)}
-        />
-      )}
-
-      {agrupados.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-50 text-gray-500 text-sm uppercase tracking-wider">
-                <th className="text-left py-3 px-4 font-semibold">Marca</th>
-                <th className="text-right py-3 px-4 font-semibold">Distrisuper</th>
-                {competidores.map((c) => (
-                  <Fragment key={c.id}>
-                    <th className="text-right py-3 px-4 font-semibold normal-case tracking-normal">
-                      {editingCompetidorId === c.id ? (
-                        <input
-                          type="text"
-                          value={editingCompetidorName}
-                          autoFocus
-                          onChange={(e) => setEditingCompetidorName(e.target.value)}
-                          onBlur={handleRenameCompetidor}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleRenameCompetidor();
-                            else if (e.key === "Escape") { setEditingCompetidorId(null); setEditingCompetidorName(""); }
-                          }}
-                          className="bg-white border border-blue-300 rounded px-2 py-1 text-gray-700 text-sm font-semibold w-32 focus:outline-none focus:ring-1 focus:ring-blue-200"
-                        />
-                      ) : (
-                        <span className="inline-flex items-center gap-1 group/header">
-                          <span className="uppercase tracking-wider">{c.nombre}</span>
-                          <span className="opacity-0 group-hover/header:opacity-100 transition-opacity inline-flex gap-1">
-                            <button
-                              onClick={() => { setEditingCompetidorId(c.id); setEditingCompetidorName(c.nombre); }}
-                              className="text-gray-300 hover:text-blue-400 text-xs"
-                              title="Renombrar"
-                            >
-                              ✎
-                            </button>
-                            <button
-                              onClick={() => {
-                                if (confirm(`¿Eliminar competidor "${c.nombre}"? Se borrarán todos sus precios.`)) {
-                                  onDeleteCompetidor(c.id);
-                                }
-                              }}
-                              className="text-gray-300 hover:text-rose-400 text-xs"
-                              title="Eliminar competidor"
-                            >
-                              ✕
-                            </button>
-                          </span>
-                        </span>
-                      )}
-                    </th>
-                    <th className="text-right py-3 px-4 font-semibold">Variación</th>
-                  </Fragment>
-                ))}
-                <th className="text-center py-3 px-2 font-semibold normal-case">
-                  {addingCompetidor ? (
-                    <div className="inline-flex items-center gap-1">
-                      <input
-                        type="text"
-                        autoFocus
-                        placeholder="Nombre"
-                        value={newCompetidorName}
-                        onChange={(e) => setNewCompetidorName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleAddCompetidor();
-                          else if (e.key === "Escape") { setAddingCompetidor(false); setNewCompetidorName(""); }
-                        }}
-                        onBlur={handleAddCompetidor}
-                        className="bg-white border border-blue-300 rounded px-2 py-1 text-gray-700 text-sm font-normal w-32 focus:outline-none focus:ring-1 focus:ring-blue-200"
-                      />
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setAddingCompetidor(true)}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-medium transition-colors"
-                      title="Agregar competidor"
-                    >
-                      + Competidor
-                    </button>
-                  )}
+      <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)] rounded-xl border border-gray-200 bg-white shadow-sm">
+        <table className="w-full table-fixed">
+          <thead className="sticky top-0 z-10 bg-gray-50 shadow-sm">
+            <tr className="text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
+              <th className="text-left py-3 px-3 font-semibold">Descripción</th>
+              {mainComp && (
+                <th className="w-32 text-right py-3 px-4 font-semibold">
+                  {mainComp.nombre}
                 </th>
-                <th className="w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {agrupados.map((grupo) => {
-                const key = `${grupo.marca}||${grupo.linea}`;
-                const isExpanded = expandedRow === key;
+              )}
+              {otherComps.map((c) => (
+                <th key={c.id} className="w-36 text-right py-3 px-4 font-semibold">
+                  {c.nombre}
+                </th>
+              ))}
+              <th className="w-8" />
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((marcaData) => {
+              const marcaKey = marcaData.marca;
+              const isMarcaExpanded = expandedMarcas.has(marcaKey);
+              const todosProductos = marcaData.lineas.flatMap((l) => l.productos);
 
-                return (
-                  <Fragment key={key}>
-                    <tr
-                      className={`border-t border-gray-100 cursor-pointer transition-colors duration-150 ${
-                        isExpanded ? "bg-blue-50/50" : "hover:bg-gray-50"
-                      }`}
-                    >
-                      <td className="py-3 px-4" onClick={() => toggleRow(key)}>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-gray-300 transition-transform duration-200 text-xs ${isExpanded ? "rotate-90" : ""}`}>
-                            ▶
+              return (
+                <Fragment key={marcaKey}>
+                  {/* ── FILA MARCA ── */}
+                  <tr
+                    className={`border-t border-gray-200 cursor-pointer select-none transition-colors ${
+                      isMarcaExpanded ? "bg-gray-100" : "hover:bg-gray-50"
+                    }`}
+                    onClick={() => toggleMarca(marcaKey)}
+                  >
+                    <td className="py-3 px-3">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-gray-400 text-xs transition-transform duration-200 shrink-0 ${
+                            isMarcaExpanded ? "rotate-90" : ""
+                          }`}
+                        >
+                          ▶
+                        </span>
+                        <div className="flex flex-col leading-tight min-w-0">
+                          <span className="font-bold text-gray-900 text-sm uppercase tracking-wide truncate">
+                            {marcaData.marca}
                           </span>
-                          <div className="flex flex-col leading-tight">
-                            <span className="font-semibold text-gray-800">{grupo.marca}</span>
-                            <span className="text-sm text-gray-500">{grupo.linea}</span>
-                            <span className="text-xs text-gray-300 mt-0.5">{grupo.productos.length} items</span>
-                          </div>
+                          <span className="text-xs text-gray-400">
+                            {marcaData.lineas.length} líneas · {todosProductos.length} productos
+                          </span>
                         </div>
+                      </div>
+                    </td>
+                    {mainComp && <td className="py-3 px-4" />}
+                    {otherComps.map((c) => (
+                      <td key={c.id} className="py-3 px-4 text-right">
+                        <VariacionBadge
+                          pct={mainComp ? avgVariacion(todosProductos, mainComp.id, c.id) : null}
+                        />
                       </td>
-                      <td className="py-3 px-4 text-right font-medium text-gray-700" onClick={() => toggleRow(key)}>
-                        {formatPrecio(grupo.totalDistri)}
-                      </td>
-                      {competidores.map((c) => {
-                        const totalComp = grupo.totalesCompetidores[c.id] || 0;
-                        const pct = calcPorcentaje(grupo.totalDistri, totalComp);
-                        return (
-                          <Fragment key={c.id}>
-                            <td className="py-3 px-4 text-right font-medium text-gray-700" onClick={() => toggleRow(key)}>
-                              {totalComp > 0 ? formatPrecio(totalComp) : <span className="text-gray-300">—</span>}
-                            </td>
-                            <td className="py-3 px-4 text-right" onClick={() => toggleRow(key)}>
-                              {totalComp > 0 ? (
+                    ))}
+                    <td />
+                  </tr>
+
+                  {/* ── FILAS LÍNEA ── */}
+                  {isMarcaExpanded &&
+                    marcaData.lineas.map((lineaData) => {
+                      const lineaKey = `${marcaKey}||${lineaData.linea}`;
+                      const isLineaExpanded = expandedLineas.has(lineaKey);
+
+                      return (
+                        <Fragment key={lineaKey}>
+                          <tr
+                            className={`border-t border-gray-100 cursor-pointer select-none transition-colors ${
+                              isLineaExpanded ? "bg-blue-50/40" : "hover:bg-gray-50/80"
+                            }`}
+                            onClick={() => toggleLinea(lineaKey)}
+                          >
+                            <td className="py-2.5 px-3 pl-8">
+                              <div className="flex items-center gap-2">
                                 <span
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-bold ${
-                                    pct > 0
-                                      ? "bg-rose-100 text-rose-600"
-                                      : "bg-emerald-100 text-emerald-600"
+                                  className={`text-gray-300 text-xs transition-transform duration-200 shrink-0 ${
+                                    isLineaExpanded ? "rotate-90" : ""
                                   }`}
                                 >
-                                  {pct > 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
+                                  ▶
                                 </span>
-                              ) : (
-                                <span className="text-gray-300">—</span>
-                              )}
+                                <div className="flex flex-col leading-tight min-w-0">
+                                  <span className="font-semibold text-gray-700 text-sm truncate">
+                                    {lineaData.linea || (
+                                      <span className="italic text-gray-400 font-normal">
+                                        Sin línea
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="text-xs text-gray-400">
+                                    {lineaData.productos.length} productos
+                                  </span>
+                                </div>
+                              </div>
                             </td>
-                          </Fragment>
-                        );
-                      })}
-                      <td onClick={() => toggleRow(key)}></td>
-                      <td className="py-3 px-2 text-center">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onDeleteGrupo(grupo.marca, grupo.linea); }}
-                          className="text-gray-300 hover:text-rose-400 transition-colors text-sm"
-                          title="Eliminar grupo"
-                        >
-                          ✕
-                        </button>
-                      </td>
-                    </tr>
-                    {isExpanded && (
-                      <ProductDetail
-                        productos={grupo.productos}
-                        competidores={competidores}
-                        marca={grupo.marca}
-                        linea={grupo.linea}
-                        colSpan={totalCols}
-                        onAdd={onAdd}
-                        onDelete={onDelete}
-                        onUpdate={onUpdate}
-                        onUpdatePrecio={onUpdatePrecio}
-                      />
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-gray-200 bg-gray-50">
-                <td className="py-3 px-4 font-bold text-gray-800">TOTAL</td>
-                <td className="py-3 px-4 text-right font-bold text-gray-800">{formatPrecio(totales.totalDistri)}</td>
-                {competidores.map((c) => {
-                  const totalComp = totales.totalesCompetidores[c.id] || 0;
-                  const pct = calcPorcentaje(totales.totalDistri, totalComp);
-                  return (
-                    <Fragment key={c.id}>
-                      <td className="py-3 px-4 text-right font-bold text-gray-800">{formatPrecio(totalComp)}</td>
-                      <td className="py-3 px-4 text-right">
-                        {totales.totalDistri > 0 && totalComp > 0 && (
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-bold ${
-                              pct > 0
-                                ? "bg-rose-100 text-rose-600"
-                                : "bg-emerald-100 text-emerald-600"
-                            }`}
-                          >
-                            {pct > 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
-                          </span>
-                        )}
-                      </td>
-                    </Fragment>
-                  );
-                })}
-                <td></td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
+                            {mainComp && <td className="py-2.5 px-4" />}
+                            {otherComps.map((c) => (
+                              <td key={c.id} className="py-2.5 px-4 text-right">
+                                <VariacionBadge
+                                  pct={
+                                    mainComp
+                                      ? avgVariacion(lineaData.productos, mainComp.id, c.id)
+                                      : null
+                                  }
+                                />
+                              </td>
+                            ))}
+                            <td />
+                          </tr>
+
+                          {/* ── FILAS PRODUCTO ── */}
+                          {isLineaExpanded &&
+                            lineaData.productos.map((p, idx) => {
+                              const mainEntry = mainComp
+                                ? getPrecioEntry(p, mainComp.id)
+                                : null;
+                              const mainPrice = mainEntry?.precio ?? 0;
+
+                              const descKey = p.codigo_particular || idx;
+                              const isDescExpanded = expandedDescs.has(descKey);
+                              const desc = p.descripcion || "—";
+                              const isLong = desc.length > DESC_LIMIT;
+
+                              return (
+                                <tr
+                                  key={p.codigo_particular || idx}
+                                  className="border-t border-gray-100 hover:bg-gray-50/60 bg-white text-sm"
+                                >
+                                  {/* descripción — truncada, expandible al click */}
+                                  <td className="py-2.5 px-3 pl-14 align-middle">
+                                    <span
+                                      className={`text-gray-700 text-sm leading-snug ${
+                                        isLong ? "cursor-pointer hover:text-gray-900" : ""
+                                      }`}
+                                      onClick={isLong ? () => toggleDesc(descKey) : undefined}
+                                    >
+                                      {isDescExpanded || !isLong
+                                        ? desc
+                                        : `${desc.slice(0, DESC_LIMIT)}…`}
+                                    </span>
+                                  </td>
+
+                                  {/* precio main — sin resaltado, sin variación */}
+                                  {mainComp && (
+                                    <td className="py-2.5 px-4 text-right align-middle">
+                                      {mainEntry ? (
+                                        <div className="flex flex-col items-end gap-0.5">
+                                          <span className="font-semibold text-gray-800">
+                                            {formatPrecio(mainEntry.precio)}
+                                          </span>
+                                          {mainEntry.codigoOriginal && (
+                                            <span className="text-xs text-gray-400 font-mono">
+                                              {mainEntry.codigoOriginal}
+                                            </span>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <span className="text-gray-300">—</span>
+                                      )}
+                                    </td>
+                                  )}
+
+                                  {/* precios competidores — con variación vs main */}
+                                  {otherComps.map((c) => {
+                                    const entry = getPrecioEntry(p, c.id);
+                                    if (!entry) {
+                                      return (
+                                        <td key={c.id} className="py-2.5 px-4 text-right align-middle">
+                                          <span className="text-gray-300">—</span>
+                                        </td>
+                                      );
+                                    }
+                                    const pct = calcVariacion(mainPrice, entry.precio);
+                                    const tier = getVariacionTier(pct);
+                                    return (
+                                      <td key={c.id} className="py-2.5 px-4 text-right align-middle">
+                                        <div className="flex flex-col items-end gap-0.5">
+                                          {pct !== null ? (
+                                            <span
+                                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${TIER_STYLES[tier]}`}
+                                            >
+                                              {pct > 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
+                                            </span>
+                                          ) : (
+                                            <span className="text-xs text-gray-400 italic">
+                                              sin ref.
+                                            </span>
+                                          )}
+                                          <span className="text-xs text-gray-500">
+                                            {formatPrecio(entry.precio)}
+                                          </span>
+                                          {entry.codigoOriginal && (
+                                            <span className="text-xs text-gray-300 font-mono">
+                                              {entry.codigoOriginal}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                    );
+                                  })}
+
+                                  <td />
+                                </tr>
+                              );
+                            })}
+                        </Fragment>
+                      );
+                    })}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {pages > 1 && (
+        <div className="flex items-center justify-center gap-3 py-2">
+          <button
+            onClick={() => onPageChange(page - 1)}
+            disabled={page <= 1}
+            className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            ← Anterior
+          </button>
+          <span className="text-sm text-gray-500">
+            Página{" "}
+            <span className="font-medium text-gray-700">{pagination.page}</span> de{" "}
+            <span className="font-medium text-gray-700">{pages}</span>
+          </span>
+          <button
+            onClick={() => onPageChange(page + 1)}
+            disabled={page >= pages}
+            className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            Siguiente →
+          </button>
         </div>
       )}
     </div>
