@@ -6,7 +6,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api/data"
 const COMPETITORS_URL = new URL("/api/competitors", API_URL).href;
 
 export default function App() {
-  const [apiData, setApiData] = useState({ data: [], total: 0, page: 1, limit: 20, pages: 0 });
+  const [apiData, setApiData] = useState({ data: [], total: 0, page: 1, limit: 11, pages: 0 });
   const [competidores, setCompetidores] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -27,7 +27,7 @@ export default function App() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ page, limit: 20 });
+    const params = new URLSearchParams({ page, limit: 15});
     if (filtroMarca) params.set("marca", filtroMarca);
     if (filtroLinea) params.set("linea", filtroLinea);
 

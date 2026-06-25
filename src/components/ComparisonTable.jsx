@@ -73,25 +73,19 @@ export default function ComparisonTable({
 
   const { pages } = pagination ?? {};
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-16 text-gray-400 text-sm">
-        Cargando...
-      </div>
-    );
-  }
-
-  if (!data.length) {
-    return (
-      <div className="text-center py-16 text-gray-400">
-        <p className="text-lg">No hay productos</p>
-      </div>
-    );
-  }
+  const btnClass =
+    "px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors";
 
   return (
-    <div className="space-y-4">
-      <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-200px)] rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div className="flex flex-col h-[calc(100vh-220px)]">
+      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+        {loading ? (
+          <div className="flex justify-center py-16 text-gray-400 text-sm">Cargando...</div>
+        ) : !data.length ? (
+          <div className="text-center py-16 text-gray-400">
+            <p className="text-lg">No hay productos</p>
+          </div>
+        ) : (
         <table className="w-full table-fixed">
           <thead className="sticky top-0 z-10 bg-gray-50 shadow-sm">
             <tr className="text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
@@ -309,31 +303,29 @@ export default function ComparisonTable({
             })}
           </tbody>
         </table>
+        )}
       </div>
 
-      {pages > 1 && (
-        <div className="flex items-center justify-center gap-3 py-2">
-          <button
-            onClick={() => onPageChange(page - 1)}
-            disabled={page <= 1}
-            className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            ← Anterior
-          </button>
-          <span className="text-sm text-gray-500">
-            Página{" "}
-            <span className="font-medium text-gray-700">{pagination.page}</span> de{" "}
-            <span className="font-medium text-gray-700">{pages}</span>
-          </span>
-          <button
-            onClick={() => onPageChange(page + 1)}
-            disabled={page >= pages}
-            className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            Siguiente →
-          </button>
-        </div>
-      )}
+      <div className="flex-shrink-0 flex items-center justify-center gap-2 py-3">
+        <button onClick={() => onPageChange(1)} disabled={page <= 1} className={btnClass}>
+          «
+        </button>
+        <button onClick={() => onPageChange(page - 1)} disabled={page <= 1} className={btnClass}>
+          ← Anterior
+        </button>
+        <span className="text-sm text-gray-500 px-2">
+          Página{" "}
+          <span className="font-medium text-gray-700">{pagination.page}</span>{" "}
+          de{" "}
+          <span className="font-medium text-gray-700">{pages || 1}</span>
+        </span>
+        <button onClick={() => onPageChange(page + 1)} disabled={page >= (pages || 1)} className={btnClass}>
+          Siguiente →
+        </button>
+        <button onClick={() => onPageChange(pages || 1)} disabled={page >= (pages || 1)} className={btnClass}>
+          »
+        </button>
+      </div>
     </div>
   );
 }
