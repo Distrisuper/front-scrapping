@@ -30,7 +30,7 @@ function VariacionBadge({ pct }) {
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${TIER_STYLES[tier]}`}
     >
-      {pct > 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
+      {pct > 0 ? "▼" : "▲"} {Math.abs(pct).toFixed(1)}%
     </span>
   );
 }
@@ -38,9 +38,6 @@ function VariacionBadge({ pct }) {
 export default function ComparisonTable({
   data,
   competidores,
-  pagination,
-  page,
-  onPageChange,
   loading,
 }) {
   const [expandedMarcas, setExpandedMarcas] = useState(new Set());
@@ -71,13 +68,8 @@ export default function ComparisonTable({
       return next;
     });
 
-  const { pages } = pagination ?? {};
-
-  const btnClass =
-    "px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors";
-
   return (
-    <div className="flex flex-col h-[calc(100vh-220px)]">
+    <div className="flex flex-col h-[calc(100vh-180px)]">
       <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm">
         {loading ? (
           <div className="flex justify-center py-16 text-gray-400 text-sm">Cargando...</div>
@@ -139,7 +131,7 @@ export default function ComparisonTable({
                     </td>
                     {mainComp && <td className="py-3 px-4" />}
                     {otherComps.map((c) => (
-                      <td key={c.id} className="py-3 px-4 text-right">
+                      <td key={c.id} className="py-3 px-4 text-center">
                         <VariacionBadge
                           pct={mainComp ? avgVariacion(todosProductos, mainComp.id, c.id) : null}
                         />
@@ -187,7 +179,7 @@ export default function ComparisonTable({
                             </td>
                             {mainComp && <td className="py-2.5 px-4" />}
                             {otherComps.map((c) => (
-                              <td key={c.id} className="py-2.5 px-4 text-right">
+                              <td key={c.id} className="py-2.5 px-4 text-center">
                                 <VariacionBadge
                                   pct={
                                     mainComp
@@ -304,27 +296,6 @@ export default function ComparisonTable({
           </tbody>
         </table>
         )}
-      </div>
-
-      <div className="flex-shrink-0 flex items-center justify-center gap-2 py-3">
-        <button onClick={() => onPageChange(1)} disabled={page <= 1} className={btnClass}>
-          «
-        </button>
-        <button onClick={() => onPageChange(page - 1)} disabled={page <= 1} className={btnClass}>
-          ← Anterior
-        </button>
-        <span className="text-sm text-gray-500 px-2">
-          Página{" "}
-          <span className="font-medium text-gray-700">{pagination.page}</span>{" "}
-          de{" "}
-          <span className="font-medium text-gray-700">{pages || 1}</span>
-        </span>
-        <button onClick={() => onPageChange(page + 1)} disabled={page >= (pages || 1)} className={btnClass}>
-          Siguiente →
-        </button>
-        <button onClick={() => onPageChange(pages || 1)} disabled={page >= (pages || 1)} className={btnClass}>
-          »
-        </button>
       </div>
     </div>
   );

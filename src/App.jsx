@@ -12,7 +12,6 @@ export default function App() {
   const [error, setError] = useState(null);
   const [filtroMarca, setFiltroMarca] = useState("");
   const [filtroLinea, setFiltroLinea] = useState("");
-  const [page, setPage] = useState(1);
 
   useEffect(() => {
     fetch(COMPETITORS_URL)
@@ -27,7 +26,7 @@ export default function App() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ page, limit: 15});
+    const params = new URLSearchParams({ page: 1, limit: 3000 });
     if (filtroMarca) params.set("marca", filtroMarca);
     if (filtroLinea) params.set("linea", filtroLinea);
 
@@ -39,7 +38,7 @@ export default function App() {
       .then(setApiData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [page, filtroMarca, filtroLinea]);
+  }, [filtroMarca, filtroLinea]);
 
   // Fuente de verdad de las columnas: el endpoint /api/competitors.
   // El join de precios se hace por `id` numérico (String(c.id) === String(p.competidorId)).
@@ -71,7 +70,6 @@ export default function App() {
   const handleMarcaChange = (val) => {
     setFiltroMarca(val);
     setFiltroLinea("");
-    setPage(1);
   };
 
   const mainNombre = competidoresEffective.find((c) => c.main)?.nombre ?? "";
@@ -105,7 +103,7 @@ export default function App() {
           filtroMarca={filtroMarca}
           filtroLinea={filtroLinea}
           onMarcaChange={handleMarcaChange}
-          onLineaChange={(val) => { setFiltroLinea(val); setPage(1); }}
+          onLineaChange={(val) => setFiltroLinea(val)}
         />
 
         {error && (
@@ -117,9 +115,6 @@ export default function App() {
         <ComparisonTable
           data={apiData.data}
           competidores={competidoresEffective}
-          pagination={apiData}
-          page={page}
-          onPageChange={setPage}
           loading={loading}
         />
       </main>
