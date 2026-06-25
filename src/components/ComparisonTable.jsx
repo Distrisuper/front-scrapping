@@ -263,7 +263,7 @@ export default function ComparisonTable({
                                             <span
                                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${TIER_STYLES[tier]}`}
                                             >
-                                              {pct > 0 ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
+                                              {pct > 0 ? "▼" : "▲"} {Math.abs(pct).toFixed(1)}%
                                             </span>
                                           ) : (
                                             <span className="text-xs text-gray-400 italic">
