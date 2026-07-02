@@ -1,9 +1,25 @@
 import { useState, useMemo, useEffect } from "react";
 import ComparisonTable from "./components/ComparisonTable.jsx";
 import Filters from "./components/Filters.jsx";
+import { normalizar } from "./utils.js";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api/data";
 const COMPETITORS_URL = new URL("/api/competitors", API_URL).href;
+
+const POSICIONES_MARCAS = [
+  { nombre: "SKF", pos: 1 },
+  { nombre: "THOMPSON", pos: 2 },
+  { nombre: "VTH", pos: 3 },
+  { nombre: "NAKATA", pos: 4 },
+  { nombre: "MAHLE", pos: 5 },
+  { nombre: "FRIC ROT", pos: 6 }
+];
+
+function getMarcaPos(marca) {
+  const norm = normalizar(marca);
+  const match = POSICIONES_MARCAS.find((m) => norm.startsWith(normalizar(m.nombre)));
+  return match ? match.pos : null;
+}
 
 export default function App() {
   const [apiData, setApiData] = useState({ data: [], total: 0, page: 1, limit: 11, pages: 0 });
@@ -40,6 +56,26 @@ export default function App() {
       .finally(() => setLoading(false));
   }, [filtroMarca, filtroLinea]);
 
+
+  // Marcas prioritarias (POSICIONES_MARCAS) primero y en su orden definido;
+  // el resto queda en el orden alfabético en que ya llega del back.
+  const sortedData = useMemo(() => {
+    return apiData.data
+      .map((d, idx) => ({ d, idx, pos: getMarcaPos(d.marca) }))
+      .sort((a, b) => {
+        if (a.pos !== null && b.pos !== null) return a.pos - b.pos;
+        if (a.pos !== null) return -1;
+        if (b.pos !== null) return 1;
+        return a.idx - b.idx;
+      })
+      .map((x) => x.d);
+  }, [apiData.data]);
+
+  const cantidadPrioritarias = useMemo(
+    () => apiData.data.filter((d) => getMarcaPos(d.marca) !== null).length,
+    [apiData.data]
+  );
+
   // Fuente de verdad de las columnas: el endpoint /api/competitors.
   // El join de precios se hace por `id` numérico (String(c.id) === String(p.competidorId)).
   const competidoresEffective = useMemo(() => {
@@ -47,6 +83,8 @@ export default function App() {
       id: String(c.id),
       nombre: c.nombre,
       main: Boolean(c.main),
+      descuentoGral: c.descuentoGral,
+      descuentoPp: c.descuentoPp,
     }));
     if (competidores.length && !derived.some((c) => c.main)) {
       console.warn(
@@ -113,9 +151,10 @@ export default function App() {
         )}
 
         <ComparisonTable
-          data={apiData.data}
+          data={sortedData}
           competidores={competidoresEffective}
           loading={loading}
+          indicePrioridad={cantidadPrioritarias}
         />
       </main>
     </div>

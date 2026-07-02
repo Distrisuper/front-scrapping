@@ -1,8 +1,56 @@
-import { useState, useMemo, Fragment } from "react";
-import { formatPrecio } from "../utils.js";
+import { useState, useEffect, useMemo, useRef, Fragment } from "react";
+import { createPortal } from "react-dom";
+import { formatPrecio, formatDescuento } from "../utils.js";
 import { calcVariacion, getVariacionTier, TIER_STYLES } from "../lib/variacion.js";
 
 const DESC_LIMIT = 80;
+
+// Tooltip se renderiza en un portal a document.body y se posiciona con
+// coordenadas de viewport (position: fixed) para no quedar recortado por
+// los contenedores con overflow-auto de la tabla.
+function HoverInfo({ trigger, children, triggerClassName = "" }) {
+  const [pos, setPos] = useState(null);
+  const ref = useRef(null);
+
+  const show = () => {
+    const rect = ref.current?.getBoundingClientRect();
+    if (rect) setPos({ top: rect.top, left: rect.left + rect.width / 2 });
+  };
+  const hide = () => setPos(null);
+
+  return (
+    <span
+      ref={ref}
+      className={`relative inline-flex ${triggerClassName}`}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+    >
+      {trigger}
+      {pos &&
+        createPortal(
+          <span
+            className="pointer-events-none fixed -translate-x-1/2 -translate-y-full -mt-1.5 flex flex-col gap-0.5 whitespace-nowrap rounded-md bg-gray-900 text-white text-[11px] font-normal normal-case tracking-normal px-2.5 py-1.5 shadow-lg z-[9999]"
+            style={{ top: pos.top, left: pos.left }}
+          >
+            {children}
+          </span>,
+          document.body
+        )}
+    </span>
+  );
+}
+
+function CompetidorNombre({ nombre, descuentoGral, descuentoPp }) {
+  return (
+    <HoverInfo
+      triggerClassName="cursor-help"
+      trigger={<span>{nombre}</span>}
+    >
+      <span>Desc. Gral: {formatDescuento(descuentoGral)}</span>
+      <span>Desc. PP: {formatDescuento(descuentoPp)}</span>
+    </HoverInfo>
+  );
+}
 
 function getPrecioEntry(producto, competidorKey) {
   return (
@@ -30,7 +78,7 @@ function VariacionBadge({ pct }) {
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${TIER_STYLES[tier]}`}
     >
-      {pct > 0 ? "▼" : "▲"} {Math.abs(pct).toFixed(1)}%
+      {pct < 0 ? "▼" : "▲"} {Math.abs(pct).toFixed(1)}%
     </span>
   );
 }
@@ -39,6 +87,7 @@ export default function ComparisonTable({
   data,
   competidores,
   loading,
+  indicePrioridad = 0,
 }) {
   const [expandedMarcas, setExpandedMarcas] = useState(new Set());
   const [expandedLineas, setExpandedLineas] = useState(new Set());
@@ -46,20 +95,30 @@ export default function ComparisonTable({
 
   const mainComp = useMemo(() => competidores.find((c) => c.main) ?? null, [competidores]);
   const otherComps = useMemo(() => competidores.filter((c) => !c.main), [competidores]);
+  const totalCols = 1 + (mainComp ? 1 : 0) + otherComps.length + 1;
 
-  const toggleMarca = (key) =>
+  const toggleMarca = (key) => {
     setExpandedMarcas((prev) => {
       const next = new Set(prev);
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
+  }
 
-  const toggleLinea = (key) =>
+  useEffect(() => {
+    const keys = data.filter((d) => d.lineas?.length === 1 && expandedMarcas.has(d.marca) && !expandedLineas.has(`${d.marca}||${d.lineas[0].linea}`));
+    for (const key of keys) {
+      toggleLinea(`${key.marca}||${key.lineas[0].linea}`);
+    }
+  },[expandedMarcas]); 
+
+  const toggleLinea = (key) => {
     setExpandedLineas((prev) => {
       const next = new Set(prev);
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
+  }
 
   const toggleDesc = (key) =>
     setExpandedDescs((prev) => {
@@ -84,29 +143,65 @@ export default function ComparisonTable({
               <th className="text-left py-3 px-3 font-semibold">Descripción</th>
               {mainComp && (
                 <th className="w-32 text-center py-3 px-4 font-semibold">
-                  {mainComp.nombre}
+                  <CompetidorNombre
+                    nombre={mainComp.nombre}
+                    descuentoGral={mainComp.descuentoGral}
+                    descuentoPp={mainComp.descuentoPp}
+                  />
                 </th>
               )}
               {otherComps.map((c) => (
                 <th key={c.id} className="w-36 text-center py-3 px-4 font-semibold">
-                  {c.nombre}
+                  <CompetidorNombre
+                    nombre={c.nombre}
+                    descuentoGral={c.descuentoGral}
+                    descuentoPp={c.descuentoPp}
+                  />
                 </th>
               ))}
               <th className="w-8" />
             </tr>
           </thead>
           <tbody>
-            {data.map((marcaData) => {
+            {data.map((marcaData, idx) => {
               const marcaKey = marcaData.marca;
               const isMarcaExpanded = expandedMarcas.has(marcaKey);
               const todosProductos = marcaData.lineas.flatMap((l) => l.productos);
+              const esPrioritaria = idx < indicePrioridad;
+              const showSeparador8020 = idx === 0 && indicePrioridad > 0;
+              const showSeparadorOtras =
+                idx === indicePrioridad && indicePrioridad > 0 && indicePrioridad < data.length;
 
               return (
                 <Fragment key={marcaKey}>
+                  {showSeparador8020 && (
+                    <tr>
+                      <td
+                        colSpan={totalCols}
+                        className="py-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-blue-700 bg-blue-50 border-t-2 border-b border-blue-200"
+                      >
+                        80/20
+                      </td>
+                    </tr>
+                  )}
+                  {showSeparadorOtras && (
+                    <tr>
+                      <td
+                        colSpan={totalCols}
+                        className="py-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-100 border-t-2 border-b border-gray-300"
+                      >
+                        Otras marcas
+                      </td>
+                    </tr>
+                  )}
                   {/* ── FILA MARCA ── */}
                   <tr
                     className={`border-t border-gray-200 cursor-pointer select-none transition-colors ${
-                      isMarcaExpanded ? "bg-gray-100" : "hover:bg-gray-50"
+                      isMarcaExpanded
+                        ? "bg-gray-100"
+                        : esPrioritaria
+                        ? "bg-blue-50 bg-opacity-20 hover:bg-blue-100/60"
+                        : "hover:bg-gray-50"
                     }`}
                     onClick={() => toggleMarca(marcaKey)}
                   >
@@ -231,6 +326,15 @@ export default function ComparisonTable({
                                         <div className="flex flex-col items-center gap-0.5">
                                           <span className="font-semibold text-gray-800 tabular-nums">
                                             {formatPrecio(mainEntry.precio)}
+                                            {mainEntry.precioOriginal != null && (
+                                              <HoverInfo
+                                                triggerClassName="cursor-help text-blue-500 font-bold ml-0.5 align-super text-xs"
+                                                trigger={<span>*</span>}
+                                              >
+                                                <span>Precio de lista: {formatPrecio(mainEntry.precioOriginal)}</span>
+                                                <span>Dto por marca: {formatDescuento(mainEntry.descuentoMarca)}</span>
+                                              </HoverInfo>
+                                            )}
                                           </span>
                                           {mainEntry.codigoOriginal && (
                                             <span className="text-xs text-gray-400 font-mono">
@@ -263,7 +367,7 @@ export default function ComparisonTable({
                                             <span
                                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${TIER_STYLES[tier]}`}
                                             >
-                                              {pct > 0 ? "▼" : "▲"} {Math.abs(pct).toFixed(1)}%
+                                              {pct < 0 ? "▼" : "▲"} {Math.abs(pct).toFixed(1)}%
                                             </span>
                                           ) : (
                                             <span className="text-xs text-gray-400 italic">
@@ -272,6 +376,15 @@ export default function ComparisonTable({
                                           )}
                                           <span className="text-xs text-gray-500 tabular-nums">
                                             {formatPrecio(entry.precio)}
+                                            {entry.precioOriginal != null && (
+                                              <HoverInfo
+                                                triggerClassName="cursor-help text-blue-500 font-bold ml-0.5 align-super"
+                                                trigger={<span>*</span>}
+                                              >
+                                                <span>Precio de lista: {formatPrecio(entry.precioOriginal)}</span>
+                                                <span>Dto por marca: {formatDescuento(entry.descuentoMarca)}</span>
+                                              </HoverInfo>
+                                            )}
                                           </span>
                                           {entry.codigoOriginal && (
                                             <span className="text-xs text-gray-300 font-mono">

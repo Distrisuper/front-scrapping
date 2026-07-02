@@ -7,9 +7,11 @@ export function formatPrecio(valor) {
   }).format(valor);
 }
 
-export function calcPorcentaje(precioDistri, precioProveedor) {
-  if (!precioDistri || precioDistri === 0) return 0;
-  return ((precioDistri - precioProveedor) / precioDistri) * 100;
+export function formatDescuento(valor) {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  const num = Number(valor);
+  if (Number.isNaN(num)) return String(valor);
+  return `${num.toFixed(1)}%`;
 }
 
 export function normalizar(texto) {
