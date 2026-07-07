@@ -40,15 +40,46 @@ function HoverInfo({ trigger, children, triggerClassName = "" }) {
   );
 }
 
-function CompetidorNombre({ nombre, descuentoGral, descuentoPp }) {
+function DescuentoInput({ label, value, onChange }) {
   return (
-    <HoverInfo
-      triggerClassName="cursor-help"
-      trigger={<span>{nombre}</span>}
-    >
-      <span>Desc. Gral: {formatDescuento(descuentoGral)}</span>
-      <span>Desc. PP: {formatDescuento(descuentoPp)}</span>
-    </HoverInfo>
+    <label className="contents font-normal normal-case tracking-normal text-[10px] text-gray-400">
+      <span className="whitespace-nowrap text-left">{label}</span>
+      <span className="relative inline-flex items-center">
+        <input
+          type="number"
+          step="any"
+          min="0"
+          max="99"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled
+          className="w-9 rounded border border-gray-200 bg-white px-1 py-0.5 pr-4 text-right text-[11px] font-medium text-gray-700 tabular-nums focus:border-blue-400 focus:outline-none disabled:bg-gray-50 disabled:text-gray-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        <span className="pointer-events-none absolute right-1 text-[10px] text-gray-400">%</span>
+      </span>
+    </label>
+  );
+}
+
+function CompetidorHeader({ nombre, descuentos, onChange }) {
+  return (
+    <div className="flex justify-center">
+      <div className="flex max-w-full flex-col items-start gap-1.5">
+        <span className="max-w-full truncate">{nombre}</span>
+        <div className="grid grid-cols-[auto_auto] items-center justify-start gap-x-1 gap-y-1">
+          <DescuentoInput
+            label="DTO Gral"
+            value={descuentos?.gral ?? ""}
+            onChange={(v) => onChange("gral", v)}
+          />
+          <DescuentoInput
+            label="DTO PP"
+            value={descuentos?.pp ?? ""}
+            onChange={(v) => onChange("pp", v)}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -97,6 +128,24 @@ export default function ComparisonTable({
   const otherComps = useMemo(() => competidores.filter((c) => !c.main), [competidores]);
   const totalCols = 1 + (mainComp ? 1 : 0) + otherComps.length + 1;
 
+  // Descuentos editables por competidor. Por ahora solo estado local: cuando se
+  // implemente el recálculo será en front, sin disparar al back.
+  const [descuentosEdit, setDescuentosEdit] = useState({});
+
+  useEffect(() => {
+    setDescuentosEdit(
+      Object.fromEntries(
+        competidores.map((c) => [c.id, { gral: c.descuentoGral ?? "", pp: c.descuentoPp ?? "" }])
+      )
+    );
+  }, [competidores]);
+
+  const setDescuento = (compId, campo, valor) =>
+    setDescuentosEdit((prev) => ({
+      ...prev,
+      [compId]: { ...prev[compId], [campo]: valor },
+    }));
+
   const toggleMarca = (key) => {
     setExpandedMarcas((prev) => {
       const next = new Set(prev);
@@ -142,20 +191,20 @@ export default function ComparisonTable({
             <tr className="text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
               <th className="text-left py-3 px-3 font-semibold">Descripción</th>
               {mainComp && (
-                <th className="w-32 text-center py-3 px-4 font-semibold">
-                  <CompetidorNombre
+                <th className="w-32 text-center py-3 px-2 font-semibold">
+                  <CompetidorHeader
                     nombre={mainComp.nombre}
-                    descuentoGral={mainComp.descuentoGral}
-                    descuentoPp={mainComp.descuentoPp}
+                    descuentos={descuentosEdit[mainComp.id]}
+                    onChange={(campo, valor) => setDescuento(mainComp.id, campo, valor)}
                   />
                 </th>
               )}
               {otherComps.map((c) => (
-                <th key={c.id} className="w-36 text-center py-3 px-4 font-semibold">
-                  <CompetidorNombre
+                <th key={c.id} className="w-36 text-center py-3 px-2 font-semibold">
+                  <CompetidorHeader
                     nombre={c.nombre}
-                    descuentoGral={c.descuentoGral}
-                    descuentoPp={c.descuentoPp}
+                    descuentos={descuentosEdit[c.id]}
+                    onChange={(campo, valor) => setDescuento(c.id, campo, valor)}
                   />
                 </th>
               ))}
