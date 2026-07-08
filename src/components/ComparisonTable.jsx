@@ -40,7 +40,8 @@ function HoverInfo({ trigger, children, triggerClassName = "" }) {
   );
 }
 
-function DescuentoInput({ label, value, onChange }) {
+function DescuentoInput({ label, value, original, onChange }) {
+  const modificado = value !== "" && Number(value) !== (Number(original) || 0);
   return (
     <label className="contents font-normal normal-case tracking-normal text-[10px] text-gray-400">
       <span className="whitespace-nowrap text-left">{label}</span>
@@ -49,11 +50,14 @@ function DescuentoInput({ label, value, onChange }) {
           type="number"
           step="any"
           min="0"
-          max="99"
+          max="100"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          disabled
-          className="w-9 rounded border border-gray-200 bg-white px-1 py-0.5 pr-4 text-right text-[11px] font-medium text-gray-700 tabular-nums focus:border-blue-400 focus:outline-none disabled:bg-gray-50 disabled:text-gray-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className={`w-9 rounded border px-1 py-0.5 pr-4 text-right text-[11px] font-medium tabular-nums focus:border-blue-400 focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+            modificado
+              ? "border-blue-400 bg-blue-50 text-blue-700"
+              : "border-gray-200 bg-white text-gray-700"
+          }`}
         />
         <span className="pointer-events-none absolute right-1 text-[10px] text-gray-400">%</span>
       </span>
@@ -61,20 +65,22 @@ function DescuentoInput({ label, value, onChange }) {
   );
 }
 
-function CompetidorHeader({ nombre, descuentos, onChange }) {
+function CompetidorHeader({ comp, descuentos, onChange }) {
   return (
     <div className="flex justify-center">
       <div className="flex max-w-full flex-col items-start gap-1.5">
-        <span className="max-w-full truncate">{nombre}</span>
+        <span className="max-w-full truncate">{comp.nombre}</span>
         <div className="grid grid-cols-[auto_auto] items-center justify-start gap-x-1 gap-y-1">
           <DescuentoInput
             label="DTO Gral"
             value={descuentos?.gral ?? ""}
+            original={comp.descuentoGral}
             onChange={(v) => onChange("gral", v)}
           />
           <DescuentoInput
             label="DTO PP"
             value={descuentos?.pp ?? ""}
+            original={comp.descuentoPp}
             onChange={(v) => onChange("pp", v)}
           />
         </div>
@@ -82,6 +88,23 @@ function CompetidorHeader({ nombre, descuentos, onChange }) {
     </div>
   );
 }
+
+// El precio del back ya viene con los descuentos originales aplicados en
+// cascada (precio = base × (1 − gral%) × (1 − pp%)). Para simular un descuento
+// editado se des-aplica el original y se aplica el nuevo.
+function factorDescuento(original, editado) {
+  const orig = Number(original) || 0;
+  if (orig >= 100) return 1;
+  const num = editado === "" || editado == null ? orig : Number(editado);
+  if (Number.isNaN(num)) return 1;
+  const nuevo = Math.min(100, Math.max(0, num));
+  return (100 - nuevo) / (100 - orig);
+}
+
+const initDescuentos = (competidores) =>
+  Object.fromEntries(
+    competidores.map((c) => [c.id, { gral: c.descuentoGral ?? "", pp: c.descuentoPp ?? "" }])
+  );
 
 function getPrecioEntry(producto, competidorKey) {
   return (
@@ -91,11 +114,13 @@ function getPrecioEntry(producto, competidorKey) {
   );
 }
 
-function avgVariacion(productos, mainId, competidorId) {
+function avgVariacion(productos, mainId, competidorId, factores) {
+  const fMain = factores?.[mainId] ?? 1;
+  const fComp = factores?.[competidorId] ?? 1;
   const vals = productos
     .map((p) => {
-      const mainPrice = getPrecioEntry(p, mainId)?.precio ?? 0;
-      const compPrice = getPrecioEntry(p, competidorId)?.precio ?? 0;
+      const mainPrice = (getPrecioEntry(p, mainId)?.precio ?? 0) * fMain;
+      const compPrice = (getPrecioEntry(p, competidorId)?.precio ?? 0) * fComp;
       return calcVariacion(mainPrice, compPrice);
     })
     .filter((v) => v !== null);
@@ -128,16 +153,12 @@ export default function ComparisonTable({
   const otherComps = useMemo(() => competidores.filter((c) => !c.main), [competidores]);
   const totalCols = 1 + (mainComp ? 1 : 0) + otherComps.length + 1;
 
-  // Descuentos editables por competidor. Por ahora solo estado local: cuando se
-  // implemente el recálculo será en front, sin disparar al back.
+  // Variador de descuentos por competidor: al editar se recalculan los precios
+  // y variaciones en front para simular escenarios. No dispara nada al back.
   const [descuentosEdit, setDescuentosEdit] = useState({});
 
   useEffect(() => {
-    setDescuentosEdit(
-      Object.fromEntries(
-        competidores.map((c) => [c.id, { gral: c.descuentoGral ?? "", pp: c.descuentoPp ?? "" }])
-      )
-    );
+    setDescuentosEdit(initDescuentos(competidores));
   }, [competidores]);
 
   const setDescuento = (compId, campo, valor) =>
@@ -145,6 +166,34 @@ export default function ComparisonTable({
       ...prev,
       [compId]: { ...prev[compId], [campo]: valor },
     }));
+
+  const resetDescuentos = () => setDescuentosEdit(initDescuentos(competidores));
+
+  const hayModificados = useMemo(
+    () =>
+      competidores.some((c) => {
+        const edit = descuentosEdit[c.id];
+        if (!edit) return false;
+        return ["gral", "pp"].some((campo) => {
+          const orig = Number(campo === "gral" ? c.descuentoGral : c.descuentoPp) || 0;
+          const val = edit[campo];
+          const num = val === "" || val == null ? orig : Number(val);
+          return !Number.isNaN(num) && num !== orig;
+        });
+      }),
+    [competidores, descuentosEdit]
+  );
+
+  const factores = useMemo(() => {
+    const map = {};
+    for (const c of competidores) {
+      const edit = descuentosEdit[c.id];
+      map[c.id] =
+        factorDescuento(c.descuentoGral, edit?.gral) *
+        factorDescuento(c.descuentoPp, edit?.pp);
+    }
+    return map;
+  }, [competidores, descuentosEdit]);
 
   const toggleMarca = (key) => {
     setExpandedMarcas((prev) => {
@@ -189,11 +238,23 @@ export default function ComparisonTable({
         <table className="w-full table-fixed">
           <thead className="sticky top-0 z-10 bg-gray-50 shadow-sm">
             <tr className="text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
-              <th className="text-left py-3 px-3 font-semibold">Descripción</th>
+              <th className="text-left py-3 px-3 font-semibold">
+                <div className="flex flex-col items-start gap-2">
+                  <span>Descripción</span>
+                  <button
+                    type="button"
+                    onClick={resetDescuentos}
+                    disabled={!hayModificados}
+                    className="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-normal normal-case tracking-normal text-gray-500 transition-colors hover:border-gray-300 hover:text-gray-700 disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:text-gray-500"
+                  >
+                    ↺ Reiniciar descuentos
+                  </button>
+                </div>
+              </th>
               {mainComp && (
                 <th className="w-32 text-center py-3 px-2 font-semibold">
                   <CompetidorHeader
-                    nombre={mainComp.nombre}
+                    comp={mainComp}
                     descuentos={descuentosEdit[mainComp.id]}
                     onChange={(campo, valor) => setDescuento(mainComp.id, campo, valor)}
                   />
@@ -202,7 +263,7 @@ export default function ComparisonTable({
               {otherComps.map((c) => (
                 <th key={c.id} className="w-36 text-center py-3 px-2 font-semibold">
                   <CompetidorHeader
-                    nombre={c.nombre}
+                    comp={c}
                     descuentos={descuentosEdit[c.id]}
                     onChange={(campo, valor) => setDescuento(c.id, campo, valor)}
                   />
@@ -277,7 +338,11 @@ export default function ComparisonTable({
                     {otherComps.map((c) => (
                       <td key={c.id} className="py-3 px-4 text-center">
                         <VariacionBadge
-                          pct={mainComp ? avgVariacion(todosProductos, mainComp.id, c.id) : null}
+                          pct={
+                            mainComp
+                              ? avgVariacion(todosProductos, mainComp.id, c.id, factores)
+                              : null
+                          }
                         />
                       </td>
                     ))}
@@ -327,7 +392,7 @@ export default function ComparisonTable({
                                 <VariacionBadge
                                   pct={
                                     mainComp
-                                      ? avgVariacion(lineaData.productos, mainComp.id, c.id)
+                                      ? avgVariacion(lineaData.productos, mainComp.id, c.id, factores)
                                       : null
                                   }
                                 />
@@ -342,7 +407,9 @@ export default function ComparisonTable({
                               const mainEntry = mainComp
                                 ? getPrecioEntry(p, mainComp.id)
                                 : null;
-                              const mainPrice = mainEntry?.precio ?? 0;
+                              const mainPrice =
+                                (mainEntry?.precio ?? 0) *
+                                (mainComp ? factores[mainComp.id] ?? 1 : 1);
 
                               const descKey = p.codigo_particular || idx;
                               const isDescExpanded = expandedDescs.has(descKey);
@@ -374,7 +441,7 @@ export default function ComparisonTable({
                                       {mainEntry ? (
                                         <div className="flex flex-col items-center gap-0.5">
                                           <span className="font-semibold text-gray-800 tabular-nums">
-                                            {formatPrecio(mainEntry.precio)}
+                                            {formatPrecio(mainPrice)}
                                             {mainEntry.precioOriginal != null && (
                                               <HoverInfo
                                                 triggerClassName="cursor-help text-blue-500 font-bold ml-0.5 align-super text-xs"
@@ -407,7 +474,8 @@ export default function ComparisonTable({
                                         </td>
                                       );
                                     }
-                                    const pct = calcVariacion(mainPrice, entry.precio);
+                                    const precioComp = entry.precio * (factores[c.id] ?? 1);
+                                    const pct = calcVariacion(mainPrice, precioComp);
                                     const tier = getVariacionTier(pct);
                                     return (
                                       <td key={c.id} className="py-2.5 px-4 text-center align-middle">
@@ -424,7 +492,7 @@ export default function ComparisonTable({
                                             </span>
                                           )}
                                           <span className="text-xs text-gray-500 tabular-nums">
-                                            {formatPrecio(entry.precio)}
+                                            {formatPrecio(precioComp)}
                                             {entry.precioOriginal != null && (
                                               <HoverInfo
                                                 triggerClassName="cursor-help text-blue-500 font-bold ml-0.5 align-super"
